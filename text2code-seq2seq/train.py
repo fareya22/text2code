@@ -8,6 +8,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import os
 import json
+import random
+import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -16,7 +18,8 @@ from data_preprocessing import (
     CodeDataset,
     save_vocab,
     load_vocab,
-    collate_batch
+    collate_batch,
+    set_seed
 )
 
 from models.vanilla_rnn import create_vanilla_rnn_model
@@ -27,11 +30,12 @@ from models.transformer import create_transformer_model
 
 # Trainer Class (Same as before)
 class Trainer:
-    def __init__(self, model, model_name, device, save_dir):
+    def __init__(self, model, model_name, device, save_dir, seed=42):
         self.model = model.to(device)
         self.model_name = model_name
         self.device = device
         self.save_dir = save_dir
+        self.seed = seed  # Store seed for reproducibility
         os.makedirs(save_dir, exist_ok=True)
         self.train_losses = []
         self.val_losses = []
@@ -84,6 +88,7 @@ class Trainer:
     def save_checkpoint(self, epoch, val_loss, optimizer, is_best=False):
         checkpoint = {
             'epoch': epoch,
+            'seed': self.seed,  # Save seed for reproducibility
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'train_losses': self.train_losses,
@@ -101,12 +106,14 @@ class Trainer:
         optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         start_epoch = 0
         best_val_loss = float('inf')
-        patience = 5  # ← Early stopping: stop if val_loss doesn't improve for 5 epochs
-        patience_counter = 0
         checkpoint_path = os.path.join(self.save_dir, f'{self.model_name}_latest.pt')
         if os.path.exists(checkpoint_path):
             print("Loading checkpoint...")
             checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            # Verify seed consistency
+            checkpoint_seed = checkpoint.get('seed', None)
+            if checkpoint_seed is not None and checkpoint_seed != self.seed:
+                print(f"⚠ Warning: Resuming with seed {self.seed}, but checkpoint was created with seed {checkpoint_seed}")
             self.model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             start_epoch = checkpoint['epoch'] + 1
@@ -125,14 +132,7 @@ class Trainer:
             is_best = val_loss < best_val_loss
             if is_best:
                 best_val_loss = val_loss
-                patience_counter = 0
                 print("✓ Best model updated!")
-            else:
-                patience_counter += 1
-                if patience_counter >= patience:
-                    print(f"\n❌ Early stopping: Val loss didn't improve for {patience} epochs")
-                    self.save_checkpoint(epoch, val_loss, optimizer, is_best=False)
-                    break
             self.save_checkpoint(epoch, val_loss, optimizer, is_best=is_best)
         # Plot curves
         plt.figure(figsize=(10,6))
@@ -148,7 +148,29 @@ class Trainer:
 # ===========================
 # Main
 # ===========================
-def main():
+def main(seed=42):
+    """
+    Main training function with reproducibility guarantee
+    
+    Args:
+        seed: Random seed for reproducibility (default: 42)
+        
+    Reproducibility Features:
+    - Sets seed for Python, NumPy, PyTorch (CPU & CUDA)
+    - Disables cuDNN non-deterministic algorithms
+    - Uses num_workers=0 in DataLoaders
+    - Saves seed in checkpoints
+    - Sets environment variables (PYTHONHASHSEED, CUDA_LAUNCH_BLOCKING)
+    
+    Usage:
+        python train.py 42           # Use seed 42
+        python train.py 123          # Use seed 123
+        python train.py              # Default seed 42
+    """
+    # Set seed for reproducibility
+    set_seed(seed)
+    print(f"Using seed: {seed}")
+    
     SAVE_DIR = "/content/drive/MyDrive/text2code-seq2seq/checkpoints"
     os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -157,8 +179,8 @@ def main():
         "num_train": 10000,
         "num_val": 1500,
         "num_test": 1500,
-        "max_docstring_len": 50,
-        "max_code_len": 80,
+        "max_docstring_len": 100,  # Extended from 50 for longer docstrings
+        "max_code_len": 150,        # Extended from 80 for longer code
         "embedding_dim": 256,
         "hidden_dim": 256,
         "batch_size": 64,
@@ -190,8 +212,8 @@ def main():
     val_dataset = CodeDataset(val_data, docstring_vocab, code_vocab,
                               config['max_docstring_len'], config['max_code_len'])
 
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate_batch)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_batch)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate_batch, num_workers=0, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_batch, num_workers=0, drop_last=False)
 
     models_to_train = [
         ('vanilla_rnn', create_vanilla_rnn_model),
@@ -221,10 +243,13 @@ def main():
                 device=device
             )
         print(f"✓ {model_name} model created successfully!")
-        trainer = Trainer(model, model_name, device, SAVE_DIR)
+        trainer = Trainer(model, model_name, device, SAVE_DIR, seed=seed)  # Pass seed
         trainer.train(train_loader, val_loader, num_epochs=config['num_epochs'], learning_rate=config['learning_rate'], weight_decay=config.get('weight_decay', 0.0))
 
     print("\nALL MODELS TRAINED SUCCESSFULLY!")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    seed = int(sys.argv[1]) if len(sys.argv) > 1 else 42
+    main(seed=seed)
+

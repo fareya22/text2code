@@ -1,10 +1,57 @@
 import re
 import torch
+import numpy as np
+import random
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from datasets import load_dataset
 from collections import Counter
 import pickle
+
+# ===== Reproducibility =====
+import os
+
+def set_seed(seed=42):
+    """
+    Set seed for reproducibility across all libraries
+    
+    Args:
+        seed: Integer seed value for reproducibility
+        
+    This function ensures reproducible results by:
+    1. Setting Python's random seed
+    2. Setting NumPy's random seed
+    3. Setting PyTorch's random seed (CPU)
+    4. Setting PyTorch's random seed (CUDA - GPU)
+    5. Disabling cuDNN's non-deterministic algorithms
+    6. Disabling cuDNN's benchmarking (which can be non-deterministic)
+    7. Setting environment variables for additional control
+    """
+    # Python's built-in random seed
+    random.seed(seed)
+    
+    # NumPy's random seed
+    np.random.seed(seed)
+    
+    # PyTorch CPU seed
+    torch.manual_seed(seed)
+    
+    # PyTorch CUDA seed (all GPUs)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    
+    # Disable cuDNN's non-deterministic algorithms
+    torch.backends.cudnn.deterministic = True
+    
+    # Disable cuDNN's benchmarking (which uses non-deterministic algorithms)
+    torch.backends.cudnn.benchmark = False
+    
+    # Additional environment variables for full reproducibility
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+    
+    print(f"✓ Reproducibility seed set to: {seed}")
 
 # Special tokens
 PAD_IDX = 0
