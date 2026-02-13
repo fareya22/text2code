@@ -15,7 +15,8 @@ from data_preprocessing import (
     load_and_preprocess_data,
     CodeDataset,
     save_vocab,
-    load_vocab
+    load_vocab,
+    collate_batch
 )
 
 from models.vanilla_rnn import create_vanilla_rnn_model
@@ -189,8 +190,8 @@ def main():
     val_dataset = CodeDataset(val_data, docstring_vocab, code_vocab,
                               config['max_docstring_len'], config['max_code_len'])
 
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, collate_fn=collate_batch)
+    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, collate_fn=collate_batch)
 
     models_to_train = [
         ('vanilla_rnn', create_vanilla_rnn_model),
