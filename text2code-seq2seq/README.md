@@ -377,4 +377,4 @@ This is an educational project for assignment purposes.
 
 **Happy Coding! 🎉**
 
-Built with PyTorch, Hugging Face Datasets, and ❤️
+Built with PyTorch, Hugging Face Datasets
