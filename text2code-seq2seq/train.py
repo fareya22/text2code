@@ -219,7 +219,7 @@ def main():
         'max_code_len': 80,
         'embedding_dim': 256,
         'hidden_dim': 256,
-        'batch_size': 32,
+        'batch_size': 16,
         'num_epochs': 20,        # ← 20 থেকে 30
         'learning_rate': 0.0005, # ← 0.001 থেকে 0.0005
         'num_layers': 2,         # ← 1 থেকে 2 (MOST IMPORTANT!)
@@ -261,32 +261,32 @@ def main():
     for model_name, model_factory in models_to_train:
         print(f"\nCreating {model_name} model...")
 
-    if model_name == 'vanilla_rnn':
-        model = model_factory(
-            input_vocab_size=len(docstring_vocab),
-            output_vocab_size=len(code_vocab),
-            embedding_dim=config['embedding_dim'],
-            hidden_dim=config['hidden_dim'],
-            device=device
-        )
-    else:
-        model = model_factory(
-            input_vocab_size=len(docstring_vocab),
-            output_vocab_size=len(code_vocab),
-            embedding_dim=config['embedding_dim'],
-            hidden_dim=config['hidden_dim'],
-            num_layers=config['num_layers'],
-            dropout=config.get('dropout', 0.0),  # ← এটা add করো
-            device=device
-        )
+        if model_name == 'vanilla_rnn':
+            model = model_factory(
+                input_vocab_size=len(docstring_vocab),
+                output_vocab_size=len(code_vocab),
+                embedding_dim=config['embedding_dim'],
+                hidden_dim=config['hidden_dim'],
+                device=device
+            )
+        else:
+            model = model_factory(
+                input_vocab_size=len(docstring_vocab),
+                output_vocab_size=len(code_vocab),
+                embedding_dim=config['embedding_dim'],
+                hidden_dim=config['hidden_dim'],
+                num_layers=config['num_layers'],
+                dropout=config.get('dropout', 0.0),
+                device=device
+            )
 
-    trainer = Trainer(model, model_name, device, SAVE_DIR)
-    trainer.train(
-        train_loader,
-        val_loader,
-        num_epochs=config['num_epochs'],
-        learning_rate=config['learning_rate']
-    )
+        trainer = Trainer(model, model_name, device, SAVE_DIR)
+        trainer.train(
+            train_loader,
+            val_loader,
+            num_epochs=config['num_epochs'],
+            learning_rate=config['learning_rate']
+        )
        
 
     print("\nALL MODELS TRAINED SUCCESSFULLY!")

@@ -6,7 +6,7 @@
   "max_code_len": 80,
   "embedding_dim": 256,
   "hidden_dim": 256,
-  "batch_size": 32,
+  "batch_size": 16,
   "num_epochs": 20,
   "learning_rate": 0.001,
   "num_layers": 2,
