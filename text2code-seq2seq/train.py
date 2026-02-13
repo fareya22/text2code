@@ -21,6 +21,7 @@ from data_preprocessing import (
 from models.vanilla_rnn import create_vanilla_rnn_model
 from models.lstm_seq2seq import create_lstm_model
 from models.lstm_attention import create_lstm_attention_model
+from models.transformer import create_transformer_model
 
 
 # Trainer Class (Same as before)
@@ -44,6 +45,8 @@ class Trainer:
             optimizer.zero_grad()
             if 'attention' in self.model_name.lower():
                 output, _ = self.model(src, trg, teacher_forcing_ratio)
+            elif 'transformer' in self.model_name.lower():
+                output = self.model(src, trg, teacher_forcing_ratio=None)
             else:
                 output = self.model(src, trg, teacher_forcing_ratio)
             output_dim = output.shape[-1]
@@ -66,6 +69,8 @@ class Trainer:
                 trg = batch['code'].to(self.device)
                 if 'attention' in self.model_name.lower():
                     output, _ = self.model(src, trg, teacher_forcing_ratio=0)
+                elif 'transformer' in self.model_name.lower():
+                    output = self.model(src, trg, teacher_forcing_ratio=None)
                 else:
                     output = self.model(src, trg, teacher_forcing_ratio=0)
                 output_dim = output.shape[-1]
@@ -90,11 +95,13 @@ class Trainer:
             best_path = os.path.join(self.save_dir, f'{self.model_name}_best.pt')
             torch.save(checkpoint, best_path)
 
-    def train(self, train_loader, val_loader, num_epochs, learning_rate=0.0005):
+    def train(self, train_loader, val_loader, num_epochs, learning_rate=0.0001, weight_decay=0.0001):
         criterion = nn.CrossEntropyLoss(ignore_index=0)
-        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         start_epoch = 0
         best_val_loss = float('inf')
+        patience = 5  # ← Early stopping: stop if val_loss doesn't improve for 5 epochs
+        patience_counter = 0
         checkpoint_path = os.path.join(self.save_dir, f'{self.model_name}_latest.pt')
         if os.path.exists(checkpoint_path):
             print("Loading checkpoint...")
@@ -117,7 +124,14 @@ class Trainer:
             is_best = val_loss < best_val_loss
             if is_best:
                 best_val_loss = val_loss
+                patience_counter = 0
                 print("✓ Best model updated!")
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"\n❌ Early stopping: Val loss didn't improve for {patience} epochs")
+                    self.save_checkpoint(epoch, val_loss, optimizer, is_best=False)
+                    break
             self.save_checkpoint(epoch, val_loss, optimizer, is_best=is_best)
         # Plot curves
         plt.figure(figsize=(10,6))
@@ -134,22 +148,26 @@ class Trainer:
 # Main
 # ===========================
 def main():
-    SAVE_DIR = "/kaggle/working/checkpoints"
+    SAVE_DIR = "/content/drive/MyDrive/text2code-seq2seq/checkpoints"
     os.makedirs(SAVE_DIR, exist_ok=True)
 
     config = {
-        'num_train': 10000,
-        'num_val': 1000,
-        'num_test': 1000,
-        'max_docstring_len': 50,
-        'max_code_len': 80,
-        'embedding_dim': 256,
-        'hidden_dim': 256,
-        'batch_size': 16,
-        'num_epochs': 10,        # reduced to 10 for faster Kaggle run
-        'learning_rate': 0.0005,
-        'num_layers': 2,
-        'dropout': 0.3
+        
+        "num_train": 10000,
+        "num_val": 1500,
+        "num_test": 1500,
+        "max_docstring_len": 50,
+        "max_code_len": 80,
+        "embedding_dim": 256,
+        "hidden_dim": 256,
+        "batch_size": 64,
+        "num_epochs": 15,
+        "learning_rate": 0.001,
+        "num_layers": 2,
+        "dropout": 0.5,
+        "clip_grad": 1.0,
+        "teacher_forcing_ratio": 0.5,     # ← increased from 0.3 for regularization
+        "weight_decay": 0.0001   # ← L2 regularization
     }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -177,7 +195,8 @@ def main():
     models_to_train = [
         ('vanilla_rnn', create_vanilla_rnn_model),
         ('lstm', create_lstm_model),
-        ('lstm_attention', create_lstm_attention_model)
+        ('lstm_attention', create_lstm_attention_model),
+        ('transformer', create_transformer_model)
     ]
 
     for model_name, model_factory in models_to_train:
@@ -200,8 +219,9 @@ def main():
                 dropout=config.get('dropout', 0.0),
                 device=device
             )
+        print(f"✓ {model_name} model created successfully!")
         trainer = Trainer(model, model_name, device, SAVE_DIR)
-        trainer.train(train_loader, val_loader, num_epochs=config['num_epochs'], learning_rate=config['learning_rate'])
+        trainer.train(train_loader, val_loader, num_epochs=config['num_epochs'], learning_rate=config['learning_rate'], weight_decay=config.get('weight_decay', 0.0))
 
     print("\nALL MODELS TRAINED SUCCESSFULLY!")
 

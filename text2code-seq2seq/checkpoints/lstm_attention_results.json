@@ -1,0 +1,207 @@
+{
+  "model_name": "lstm_attention",
+  "total_examples": 662,
+  "bleu_score": {
+    "average": 0.0,
+    "all_scores": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "exact_match_rate": 0.0,
+  "token_accuracy": 0.0,
+  "ast_valid_rate": 0.0,
+  "ast_valid_count": 0,
+  "error_analysis": {
+    "total_examples": 662,
+    "syntax_errors": 662,
+    "missing_indentation": 0,
+    "incorrect_operators": 0,
+    "missing_tokens": 0,
+    "extra_tokens": 662,
+    "error_examples": [
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      },
+      {
+        "predicted": "def def ( ( ( NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLINE NEWLIN",
+        "reference": "c o d e",
+        "error_types": [
+          "extra_tokens",
+          "syntax_error"
+        ]
+      }
+    ]
+  },
+  "bleu_by_docstring_length": {
+    "0": 0.0
+  },
+  "has_attention": true
+}

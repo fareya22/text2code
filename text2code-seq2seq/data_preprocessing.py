@@ -1,236 +1,315 @@
-"""
-Data Preprocessing for CodeSearchNet Dataset
-Handles loading, tokenization, and vocabulary building
-"""
-
+import re
 import torch
-from datasets import load_dataset, DatasetDict, Dataset
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+from datasets import load_dataset
 from collections import Counter
 import pickle
-import os
+
+# Special tokens
+PAD_IDX = 0
+SOS_IDX = 1
+EOS_IDX = 2
+UNK_IDX = 3
+PAD_TOKEN = '<PAD>'
+SOS_TOKEN = '<SOS>'
+EOS_TOKEN = '<EOS>'
+UNK_TOKEN = '<UNK>'
+
+FREQ_THRESHOLD = 2  # Minimum frequency for a token to be in vocab
 
 
-class Vocabulary:
-    """Vocabulary for text/code tokenization"""
-    
-    def __init__(self):
-        self.word2idx = {'<PAD>': 0, '<SOS>': 1, '<EOS>': 2, '<UNK>': 3}
-        self.idx2word = {0: '<PAD>', 1: '<SOS>', 2: '<EOS>', 3: '<UNK>'}
-        self.word_count = Counter()
-        self.n_words = 4  # Count SOS, EOS, PAD, UNK
-        
-    def add_sentence(self, sentence):
-        """Add all words in a sentence to vocabulary"""
-        for word in sentence.split():
-            self.add_word(word)
-            
-    def add_word(self, word):
-        """Add a word to vocabulary"""
-        if word not in self.word2idx:
-            self.word2idx[word] = self.n_words
-            self.idx2word[self.n_words] = word
-            self.n_words += 1
-        self.word_count[word] += 1
-        
-    def __len__(self):
-        return self.n_words
+def tokenize(text):
+    """Regex-based tokenizer for code and docstrings"""
+    text = text.strip()
+    text = text.replace('\n', ' NEWLINE ').replace('\t', ' INDENT ')
+    tokens = re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*|[0-9]+|[^\s]', text)
+    return tokens
 
 
 def simple_tokenize(text):
-    """Simple whitespace tokenization"""
-    # Basic cleaning
+    """Simple tokenizer: lowercase and split by whitespace"""
     text = text.strip().lower()
-    # Split by whitespace
     tokens = text.split()
-    return ' '.join(tokens)
+    return " ".join(tokens)
 
 
-def load_and_preprocess_data(num_train=10000, num_val=1000, num_test=1000, 
-                             max_docstring_len=50, max_code_len=80):
-    """
-    Load CodeSearchNet dataset and preprocess
-    
-    Args:
-        num_train: Number of training examples
-        num_val: Number of validation examples
-        num_test: Number of test examples
-        max_docstring_len: Maximum docstring length
-        max_code_len: Maximum code length
-    
-    Returns:
-        train_data, val_data, test_data, docstring_vocab, code_vocab
-    """
-    
-    print("Loading dataset...")
+def sentence_to_indices(sentence, vocab, max_len=10):
+    """Convert a sentence to padded indices"""
+    tokens = sentence.lower().split()
+    indices = [vocab.word2idx.get(token, UNK_IDX) for token in tokens]
+    # Pad to max_len
+    if len(indices) < max_len:
+        indices.extend([PAD_IDX] * (max_len - len(indices)))
+    else:
+        indices = indices[:max_len]
+    return indices
+
+
+class Vocabulary:
+    def __init__(self, freq_threshold=FREQ_THRESHOLD):
+        self.freq_threshold = freq_threshold
+        self.itos = {PAD_IDX: PAD_TOKEN, SOS_IDX: SOS_TOKEN, EOS_IDX: EOS_TOKEN, UNK_IDX: UNK_TOKEN}
+        self.stoi = {v: k for k, v in self.itos.items()}
+        self.counter = Counter()
+
+    @property
+    def word2idx(self):
+        """Alias for stoi (string to index)"""
+        return self.stoi
+
+    def add_sentence(self, sentence):
+        """Add tokens from a sentence to the vocabulary"""
+        tokens = simple_tokenize(sentence).split()
+        idx = len(self.stoi)
+        for token in tokens:
+            if token not in self.stoi:
+                self.stoi[token] = idx
+                self.itos[idx] = token
+                idx += 1
+
+    def build_vocabulary(self, token_lists):
+        for tokens in token_lists:
+            self.counter.update(tokens)
+        idx = len(self.itos)
+        for token, count in self.counter.most_common():
+            if count >= self.freq_threshold:
+                self.stoi[token] = idx
+                self.itos[idx] = token
+                idx += 1
+
+    def numericalize(self, tokens):
+        return [self.stoi.get(tok, UNK_IDX) for tok in tokens]
+
+    def decode(self, indices):
+        tokens = []
+        for idx in indices:
+            if idx == EOS_IDX:
+                break
+            if idx not in (PAD_IDX, SOS_IDX):
+                tokens.append(self.itos.get(idx, UNK_TOKEN))
+        return tokens
+
+    def __len__(self):
+        return len(self.itos)
+
+
+class CodeDocstringDataset(Dataset):
+    def __init__(self, docstrings, codes, src_vocab, trg_vocab, max_src_len=50, max_trg_len=80):
+        self.docstrings = docstrings
+        self.codes = codes
+        self.src_vocab = src_vocab
+        self.trg_vocab = trg_vocab
+        self.max_src_len = max_src_len
+        self.max_trg_len = max_trg_len
+
+    def __len__(self):
+        return len(self.docstrings)
+
+    def __getitem__(self, idx):
+        src_tokens = self.docstrings[idx][:self.max_src_len]
+        trg_tokens = self.codes[idx][:self.max_trg_len]
+
+        src_indices = [SOS_IDX] + self.src_vocab.numericalize(src_tokens) + [EOS_IDX]
+        trg_indices = [SOS_IDX] + self.trg_vocab.numericalize(trg_tokens) + [EOS_IDX]
+
+        return torch.tensor(src_indices, dtype=torch.long), torch.tensor(trg_indices, dtype=torch.long)
+
+
+def collate_fn(batch):
+    src_batch, trg_batch = zip(*batch)
+    src_padded = pad_sequence(src_batch, batch_first=True, padding_value=PAD_IDX)
+    trg_padded = pad_sequence(trg_batch, batch_first=True, padding_value=PAD_IDX)
+    return src_padded, trg_padded
+
+
+def load_and_prepare_data(dataset_name="code_search_net", num_train=10000, num_val=1000, num_test=1000,
+                          max_src_len=50, max_trg_len=80, batch_size=32, freq_threshold=FREQ_THRESHOLD):
+    print("Loading dataset from Hugging Face...")
     dataset = load_dataset("Nan-Do/code-search-net-python")
-    if 'validation' not in dataset:
-        print("Validation split not found. Creating validation split from training data (10% of train set).")
-        # Using a fixed test_size of 0.1 (10%) for creating the validation split.
-        # This ensures a validation set is always present if `num_val` is intended as a cap
-        # or if the original dataset simply lacks a 'validation' split.
-        train_val_split = dataset['train'].train_test_split(test_size=0.1, seed=42)
-        dataset['train'] = train_val_split['train']
-        dataset['validation'] = train_val_split['test']
 
-        if 'test' not in dataset:
-            print("Test split not found. Creating test split from training data (10% of train set).")
-            # Using a fixed test_size of 0.1 (10%) for creating the test split.
-            # This ensures a test set is always present if the original dataset lacks a 'test' split.
-            train_test_split = dataset['train'].train_test_split(test_size=0.1, seed=42)
-            dataset['train'] = train_test_split['train']
-            dataset['test'] = train_test_split['test']
+    # Create validation/test splits if missing
+    if 'validation' not in dataset:
+        split = dataset['train'].train_test_split(test_size=0.1, seed=42)
+        dataset['train'] = split['train']
+        dataset['validation'] = split['test']
+
+    if 'test' not in dataset:
+        split = dataset['train'].train_test_split(test_size=0.1, seed=42)
+        dataset['train'] = split['train']
+        dataset['test'] = split['test']
 
     # Select subsets
     train_raw = dataset['train'].select(range(min(num_train, len(dataset['train']))))
     val_raw = dataset['validation'].select(range(min(num_val, len(dataset['validation']))))
     test_raw = dataset['test'].select(range(min(num_test, len(dataset['test']))))
-    
-    print(f"Loaded {len(train_raw)} training, {len(val_raw)} validation, {len(test_raw)} test examples")
-    
-    # Build vocabularies
-    print("Building vocabularies...")
-    docstring_vocab = Vocabulary()
-    code_vocab = Vocabulary()
-    
-    # Process data
-    def process_split(data_split):
-        processed = []
-        for example in data_split:
-            # Get docstring and code
+
+    # Tokenize
+    def process_split(split_data):
+        docstrings, codes = [], []
+        for example in split_data:
             docstring = example.get('func_documentation_string', '') or example.get('docstring', '')
             code = example.get('func_code_string', '') or example.get('code', '')
-            
             if not docstring or not code:
                 continue
-                
-            # Tokenize
-            docstring_tokens = simple_tokenize(docstring)
-            code_tokens = simple_tokenize(code)
-            
-            # Check length constraints
-            if len(docstring_tokens.split()) <= max_docstring_len and len(code_tokens.split()) <= max_code_len:
-                processed.append({
-                    'docstring': docstring_tokens,
-                    'code': code_tokens
-                })
-                
-        return processed
-    
-    train_data = process_split(train_raw)
-    val_data = process_split(val_raw)
-    test_data = process_split(test_raw)
-    
-    print(f"After filtering: {len(train_data)} train, {len(val_data)} val, {len(test_data)} test")
-    
-    # Build vocabularies from training data
-    for example in train_data:
-        docstring_vocab.add_sentence(example['docstring'])
-        code_vocab.add_sentence(example['code'])
-    
-    print(f"Docstring vocabulary size: {len(docstring_vocab)}")
-    print(f"Code vocabulary size: {len(code_vocab)}")
-    
-    return train_data, val_data, test_data, docstring_vocab, code_vocab
+            doc_tokens = tokenize(docstring)
+            code_tokens = tokenize(code)
+            docstrings.append(doc_tokens)
+            codes.append(code_tokens)
+        return docstrings, codes
+
+    train_docs, train_codes = process_split(train_raw)
+    val_docs, val_codes = process_split(val_raw)
+    test_docs, test_codes = process_split(test_raw)
+
+    print(f"Train: {len(train_docs)}, Val: {len(val_docs)}, Test: {len(test_docs)}")
+
+    # Build vocabularies
+    src_vocab = Vocabulary(freq_threshold=freq_threshold)
+    src_vocab.build_vocabulary(train_docs)
+    trg_vocab = Vocabulary(freq_threshold=freq_threshold)
+    trg_vocab.build_vocabulary(train_codes)
+
+    print(f"Source vocab size: {len(src_vocab)}")
+    print(f"Target vocab size: {len(trg_vocab)}")
+
+    # Create datasets
+    train_dataset = CodeDocstringDataset(train_docs, train_codes, src_vocab, trg_vocab, max_src_len, max_trg_len)
+    val_dataset = CodeDocstringDataset(val_docs, val_codes, src_vocab, trg_vocab, max_src_len, max_trg_len)
+    test_dataset = CodeDocstringDataset(test_docs, test_codes, src_vocab, trg_vocab, max_src_len, max_trg_len)
+
+    # Create dataloaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+
+    return train_loader, val_loader, test_loader, src_vocab, trg_vocab
 
 
-def sentence_to_indices(sentence, vocab, max_len):
-    """Convert sentence to indices with padding"""
-    indices = [vocab.word2idx.get(word, vocab.word2idx['<UNK>']) 
-               for word in sentence.split()]
-    
-    # Truncate if too long
-    indices = indices[:max_len]
-    
-    # Pad if too short
-    while len(indices) < max_len:
-        indices.append(vocab.word2idx['<PAD>'])
-    
-    return indices
+# Save/load vocab for future reuse
+def save_vocab(vocab, filepath):
+    with open(filepath, 'wb') as f:
+        pickle.dump(vocab, f)
+
+def load_vocab(filepath):
+    with open(filepath, 'rb') as f:
+        return pickle.load(f)
 
 
-def indices_to_sentence(indices, vocab):
-    """Convert indices back to sentence"""
-    words = []
-    for idx in indices:
-        if idx == vocab.word2idx['<EOS>']:
-            break
-        if idx != vocab.word2idx['<PAD>'] and idx != vocab.word2idx['<SOS>']:
-            words.append(vocab.idx2word[idx])
-    return ' '.join(words)
+# ===== WRAPPER FUNCTIONS FOR COMPATIBILITY =====
+
+def load_and_preprocess_data(dataset_name="code_search_net", num_train=10000, num_val=1000, num_test=1000,
+                             max_docstring_len=50, max_code_len=80, batch_size=32, freq_threshold=FREQ_THRESHOLD):
+    """
+    Wrapper function for compatibility with train.py/evaluate.py
+    Returns preprocessed data (not dataloaders)
+    """
+    print("Loading dataset from Hugging Face...")
+    dataset = load_dataset("Nan-Do/code-search-net-python")
+
+    # Create validation/test splits if missing
+    if 'validation' not in dataset:
+        split = dataset['train'].train_test_split(test_size=0.1, seed=42)
+        dataset['train'] = split['train']
+        dataset['validation'] = split['test']
+
+    if 'test' not in dataset:
+        split = dataset['train'].train_test_split(test_size=0.1, seed=42)
+        dataset['train'] = split['train']
+        dataset['test'] = split['test']
+
+    # Select subsets
+    train_raw = dataset['train'].select(range(min(num_train, len(dataset['train']))))
+    val_raw = dataset['validation'].select(range(min(num_val, len(dataset['validation']))))
+    test_raw = dataset['test'].select(range(min(num_test, len(dataset['test']))))
+
+    # Tokenize
+    def process_split(split_data):
+        docstrings, codes = [], []
+        for example in split_data:
+            docstring = example.get('func_documentation_string', '') or example.get('docstring', '')
+            code = example.get('func_code_string', '') or example.get('code', '')
+            if not docstring or not code:
+                continue
+            doc_tokens = tokenize(docstring)
+            code_tokens = tokenize(code)
+            docstrings.append(doc_tokens)
+            codes.append(code_tokens)
+        return docstrings, codes
+
+    train_docs, train_codes = process_split(train_raw)
+    val_docs, val_codes = process_split(val_raw)
+    test_docs, test_codes = process_split(test_raw)
+
+    print(f"Train: {len(train_docs)}, Val: {len(val_docs)}, Test: {len(test_docs)}")
+
+    # Build vocabularies
+    src_vocab = Vocabulary(freq_threshold=freq_threshold)
+    src_vocab.build_vocabulary(train_docs)
+    trg_vocab = Vocabulary(freq_threshold=freq_threshold)
+    trg_vocab.build_vocabulary(train_codes)
+
+    print(f"Source vocab size: {len(src_vocab)}")
+    print(f"Target vocab size: {len(trg_vocab)}")
+
+    # Prepare data in format expected by train.py
+    train_data = [(d, c) for d, c in zip(train_docs, train_codes)]
+    val_data = [(d, c) for d, c in zip(val_docs, val_codes)]
+    test_data = [(d, c) for d, c in zip(test_docs, test_codes)]
+
+    return train_data, val_data, test_data, src_vocab, trg_vocab
 
 
-class CodeDataset(torch.utils.data.Dataset):
-    """PyTorch Dataset for code generation"""
-    
-    def __init__(self, data, docstring_vocab, code_vocab, max_docstring_len=50, max_code_len=80):
+class CodeDataset(Dataset):
+    """Wrapper dataset class for compatibility with train.py"""
+    def __init__(self, data, src_vocab, trg_vocab, max_src_len=50, max_trg_len=80):
         self.data = data
-        self.docstring_vocab = docstring_vocab
-        self.code_vocab = code_vocab
-        self.max_docstring_len = max_docstring_len
-        self.max_code_len = max_code_len
-        
+        self.src_vocab = src_vocab
+        self.trg_vocab = trg_vocab
+        self.max_src_len = max_src_len
+        self.max_trg_len = max_trg_len
+
     def __len__(self):
         return len(self.data)
-    
+
     def __getitem__(self, idx):
-        example = self.data[idx]
+        src_tokens, trg_tokens = self.data[idx]
         
-        # Convert to indices
-        docstring_indices = sentence_to_indices(
-            example['docstring'], 
-            self.docstring_vocab, 
-            self.max_docstring_len
-        )
-        
-        # Add SOS and EOS to code
-        code_words = example['code'].split()
-        code_with_sos_eos = ['<SOS>'] + code_words + ['<EOS>']
-        code_sentence = ' '.join(code_with_sos_eos)
-        
-        code_indices = sentence_to_indices(
-            code_sentence,
-            self.code_vocab,
-            self.max_code_len + 2  # +2 for SOS and EOS
-        )
-        
+        src_tokens = src_tokens[:self.max_src_len]
+        trg_tokens = trg_tokens[:self.max_trg_len]
+
+        src_indices = [SOS_IDX] + self.src_vocab.numericalize(src_tokens) + [EOS_IDX]
+        trg_indices = [SOS_IDX] + self.trg_vocab.numericalize(trg_tokens) + [EOS_IDX]
+
         return {
-            'docstring': torch.LongTensor(docstring_indices),
-            'code': torch.LongTensor(code_indices),
-            'docstring_text': example['docstring'],
-            'code_text': example['code']
+            'docstring': torch.tensor(src_indices, dtype=torch.long),
+            'code': torch.tensor(trg_indices, dtype=torch.long)
         }
 
 
-def save_vocab(vocab, filepath):
-    """Save vocabulary to file"""
-    with open(filepath, 'wb') as f:
-        pickle.dump(vocab, f)
-    print(f"Vocabulary saved to {filepath}")
-
-
-def load_vocab(filepath):
-    """Load vocabulary from file"""
-    with open(filepath, 'rb') as f:
-        vocab = pickle.load(f)
-    print(f"Vocabulary loaded from {filepath}")
-    return vocab
-
-
-if __name__ == "__main__":
-    # Test data preprocessing
-    train_data, val_data, test_data, docstring_vocab, code_vocab = load_and_preprocess_data(
-        num_train=1000, 
-        num_val=100, 
-        num_test=100
-    )
+def collate_batch(batch):
+    """Custom collate function to pad sequences"""
+    docstrings = [item['docstring'] for item in batch]
+    codes = [item['code'] for item in batch]
     
-    print("\nSample example:")
-    print("Docstring:", train_data[0]['docstring'])
-    print("Code:", train_data[0]['code'])
+    docstrings_padded = pad_sequence(docstrings, batch_first=True, padding_value=PAD_IDX)
+    codes_padded = pad_sequence(codes, batch_first=True, padding_value=PAD_IDX)
     
-    # Test dataset
-    dataset = CodeDataset(train_data[:10], docstring_vocab, code_vocab)
-    sample = dataset[0]
-    print("\nDataset sample shape:")
-    print("Docstring tensor:", sample['docstring'].shape)
-    print("Code tensor:", sample['code'].shape)
+    return {
+        'docstring': docstrings_padded,
+        'code': codes_padded
+    }
+
+
+
+def indices_to_sentence(indices, vocab):
+    """Convert indices back to sentence string"""
+    tokens = []
+    for idx in indices:
+        if idx == EOS_IDX or idx == PAD_IDX:
+            continue
+        if idx == SOS_IDX:
+            continue
+        tokens.append(vocab.itos.get(idx, '<UNK>'))
+    return ' '.join(tokens)
+

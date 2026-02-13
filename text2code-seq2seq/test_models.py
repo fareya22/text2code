@@ -107,6 +107,41 @@ def test_lstm_attention():
     return True
 
 
+def test_transformer():
+    """Test Transformer model"""
+    print("\n" + "="*60)
+    print("Testing Transformer Seq2Seq")
+    print("="*60)
+    
+    from models.transformer import create_transformer_model
+    
+    device = torch.device('cpu')
+    model = create_transformer_model(
+        input_vocab_size=1000,
+        output_vocab_size=1000,
+        embedding_dim=128,
+        hidden_dim=256,
+        num_layers=1,
+        dropout=0.1,
+        device=device
+    )
+    
+    # Test forward pass
+    src = torch.randint(0, 1000, (4, 50))
+    trg = torch.randint(0, 1000, (4, 80))
+    
+    output = model(src, trg, teacher_forcing_ratio=None)
+    assert output.shape == (4, 80, 1000), f"Expected (4, 80, 1000), got {output.shape}"
+    
+    # Test generation
+    generated = model.generate(src, max_len=80, sos_idx=1, eos_idx=2)
+    assert generated.shape[0] == 4, f"Expected batch size 4, got {generated.shape[0]}"
+    assert generated.shape[1] <= 80, f"Expected sequence length <= 80, got {generated.shape[1]}"
+    
+    print("✓ Transformer: All tests passed!")
+    return True
+
+
 def test_data_preprocessing():
     """Test data preprocessing"""
     print("\n" + "="*60)
@@ -167,6 +202,12 @@ def main():
         test_lstm_attention()
     except Exception as e:
         print(f"✗ LSTM + Attention failed: {e}")
+        all_passed = False
+    
+    try:
+        test_transformer()
+    except Exception as e:
+        print(f"✗ Transformer failed: {e}")
         all_passed = False
     
     print("\n" + "="*60)
