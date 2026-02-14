@@ -1,380 +1,288 @@
-# Text-to-Python Code Generation Using Seq2Seq Models
+# Text-to-Code Generation using Seq2Seq Models
 
-Complete implementation of three Seq2Seq architectures for code generation from natural language docstrings.
+Deep Learning project implementing and comparing different sequence-to-sequence architectures for automatic Python code generation from natural language descriptions (docstrings).
 
-## 🎯 Project Overview
+## 📋 Project Overview
 
-This project implements and compares three recurrent neural network architectures:
+This project implements and evaluates four neural sequence-to-sequence models for translating natural language function descriptions into Python code:
 
-1. **Vanilla RNN Seq2Seq** - Baseline model
-2. **LSTM Seq2Seq** - Improved long-term dependency handling
-3. **LSTM + Attention** - State-of-the-art with Bahdanau attention
+1. **Vanilla RNN Seq2Seq** - Baseline model with basic RNN encoder-decoder
+2. **LSTM Seq2Seq** - Improved model using LSTM cells for better long-term dependencies
+3. **LSTM with Attention** - LSTM model with Bahdanau attention mechanism
+4. **Transformer** (Bonus) - State-of-the-art transformer-based model
 
-### Dataset
-- **CodeSearchNet Python** from Hugging Face
-- ~10,000 training pairs (docstring → Python code)
-- Real-world GitHub code examples
+## 🎯 Key Features
+
+- ✅ Complete implementation of 4 different architectures
+- ✅ Comprehensive evaluation metrics (BLEU, Token Accuracy, Exact Match, Syntax Validation)
+- ✅ Attention visualization with heatmaps
+- ✅ Performance analysis vs docstring length
+- ✅ Error analysis (syntax errors, indentation mistakes)
+- ✅ Reproducible training with seed control
+- ✅ Professional documentation and code organization
+
+## 📦 Requirements
+
+### System Requirements
+- Python 3.8+
+- CUDA-capable GPU (recommended, but CPU works too)
+- 8GB+ RAM
+- 10GB+ free disk space
+
+### Python Dependencies
+
+Install all dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+Key packages:
+- PyTorch >= 2.0.0
+- Hugging Face datasets
+- sacrebleu (for BLEU score calculation)
+- matplotlib, seaborn (for visualization)
+- tqdm (for progress bars)
+
+## 🚀 Quick Start
+
+### 1. Clone Repository
+```bash
+git clone <your-repo-url>
+cd text2code-seq2seq
+```
+
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Download Dataset
+
+The dataset (CodeSearchNet Python) will be automatically downloaded on first run. No manual download needed!
+
+### 4. Train Models
+```bash
+# Train all models (Vanilla RNN, LSTM, LSTM+Attention, Transformer)
+python train.py
+
+# Or with custom seed for reproducibility
+python train.py 42
+```
+
+**Training Time (approx):**
+- Vanilla RNN: ~30-45 min (GPU) / ~2-3 hours (CPU)
+- LSTM: ~45-60 min (GPU) / ~3-4 hours (CPU)
+- LSTM+Attention: ~60-90 min (GPU) / ~4-5 hours (CPU)
+- Transformer: ~90-120 min (GPU) / ~5-6 hours (CPU)
+
+### 5. Evaluate Models
+```bash
+# Evaluate all trained models on test set
+python evaluate.py
+```
+
+**Outputs:**
+- `results/metrics.json` - All evaluation metrics
+- `results/performance_vs_length.png` - Performance vs docstring length graph
+- `results/*_samples.txt` - Sample predictions for each model
+
+### 6. Visualize Attention
+```bash
+# Generate attention heatmaps (for LSTM+Attention model)
+python visualize_attention.py
+```
+
+**Outputs:**
+- `results/attention_viz/attention_example_*.png`
+- Console output with analysis
+
+### 7. Generate PDF Report
+```bash
+# Generate comprehensive PDF report
+python generate_pdf_report.py
+```
+
+**Output:** `1331.pdf`
 
 ## 📁 Project Structure
 
 ```
 text2code-seq2seq/
-├── data_preprocessing.py      # Dataset loading & tokenization
-├── models/
+├── models/                          # Model implementations
 │   ├── __init__.py
-│   ├── vanilla_rnn.py         # Model 1: Vanilla RNN
-│   ├── lstm_seq2seq.py        # Model 2: LSTM Seq2Seq
-│   └── lstm_attention.py      # Model 3: LSTM + Attention
-├── train.py                   # Training all models
-├── evaluate.py                # BLEU score & metrics
-├── visualize_attention.py     # Attention heatmap generation
-├── requirements.txt           # Dependencies
-└── README.md                  # This file
+│   ├── vanilla_rnn.py              # Vanilla RNN Seq2Seq
+│   ├── lstm_seq2seq.py             # LSTM Seq2Seq
+│   ├── lstm_attention.py           # LSTM with Bahdanau Attention
+│   └── transformer.py              # Transformer Seq2Seq (bonus)
+│
+├── train.py                         # Training script for all models
+├── evaluate.py                      # Comprehensive evaluation script
+├── visualize_attention.py          # Attention visualization script
+├── data_preprocessing.py           # Dataset loading and preprocessing
+├── utils.py                         # Utility functions
+│
+├── checkpoints/                     # Saved model checkpoints
+│   ├── vanilla_rnn_best.pt
+│   ├── vanilla_rnn_latest.pt
+│   ├── lstm_best.pt
+│   ├── lstm_latest.pt
+│   ├── lstm_attention_best.pt
+│   ├── lstm_attention_latest.pt
+│   ├── transformer_best.pt
+│   ├── transformer_latest.pt
+│   ├── docstring_vocab.pkl
+│   └── code_vocab.pkl
+│
+├── results/                         # Evaluation results
+│   ├── loss_curves/                # Training/validation curves
+│   ├── attention_viz/              # Attention heatmaps
+│   ├── metrics.json                # All evaluation metrics
+│   ├── performance_vs_length.png   # Performance analysis
+│   └── *_samples.txt               # Sample outputs
+│
+├── report/                          # Final report (PDF)
+│   └── report.pdf
+│
+├── requirements.txt                 # Python dependencies
+├── README.md                        # This file
+└── Dockerfile                       # Docker container (optional)
 ```
 
-## 🚀 Quick Start
+## 🔧 Configuration
 
-### 1. Installation
-
-```bash
-# Clone or navigate to project directory
-cd text2code-seq2seq
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Download NLTK data (for tokenization)
-python -c "import nltk; nltk.download('punkt')"
-```
-
-### 2. Training
-
-Train all three models:
-
-```bash
-python train.py
-```
-
-This will:
-- Download CodeSearchNet dataset
-- Preprocess and tokenize data
-- Train Vanilla RNN, LSTM, and LSTM+Attention models
-- Save checkpoints in `checkpoints/` directory
-- Generate training curve plots
-
-**Training Configuration:**
-- Training examples: 10,000
-- Validation examples: 1,000
-- Test examples: 1,000
-- Embedding dimension: 256
-- Hidden dimension: 256
-- Batch size: 32
-- Epochs: 20
-- Learning rate: 0.001
-
-**Expected Training Time:**
-- Vanilla RNN: ~15-20 minutes
-- LSTM: ~20-25 minutes
-- LSTM + Attention: ~30-35 minutes
-
-(On CPU. GPU will be much faster)
-
-### 3. Evaluation
-
-Evaluate all trained models:
-
-```bash
-python evaluate.py
-```
-
-This will:
-- Load best checkpoints
-- Generate predictions on test set
-- Calculate BLEU score, token accuracy, exact match
-- Perform error analysis
-- Save results to JSON files
-
-**Output:**
-```
-checkpoints/vanilla_rnn_results.json
-checkpoints/lstm_results.json
-checkpoints/lstm_attention_results.json
-checkpoints/model_comparison.json
-```
-
-### 4. Attention Visualization
-
-Generate attention heatmaps (LSTM + Attention model only):
-
-```bash
-python visualize_attention.py
-```
-
-This will:
-- Generate attention heatmaps for 5 test examples
-- Analyze attention patterns
-- Save visualizations to `attention_plots/`
-
-**Output:**
-```
-attention_plots/attention_example_1.png
-attention_plots/attention_example_2.png
-...
-```
-
-## 📊 Model Architectures
-
-### 1. Vanilla RNN Seq2Seq
-
-**Encoder:**
-- Simple RNN cells
-- Fixed-length context vector
-- Unidirectional
-
-**Decoder:**
-- Simple RNN cells
-- Teacher forcing during training
-
-**Limitations:**
-- Struggles with long sequences
-- Vanishing gradient problem
-- Fixed context bottleneck
-
-### 2. LSTM Seq2Seq
-
-**Encoder:**
-- LSTM cells with forget gates
-- Better gradient flow
-- Unidirectional
-
-**Decoder:**
-- LSTM cells
-- Improved long-term dependencies
-
-**Improvements:**
-- ✓ Better handling of long sequences
-- ✓ Reduced vanishing gradient
-- ✗ Still has fixed context bottleneck
-
-### 3. LSTM + Attention
-
-**Encoder:**
-- **Bidirectional LSTM**
-- Processes input forward and backward
-- Captures richer context
-
-**Decoder:**
-- LSTM with Bahdanau attention
-- Dynamic context vector
-- Attends to relevant input positions
-
-**Attention Mechanism:**
-- Additive (Bahdanau) attention
-- Learns alignment between input/output
-- Interpretable via attention weights
-
-**Improvements:**
-- ✓ No fixed context bottleneck
-- ✓ Better performance on long sequences
-- ✓ Interpretable alignments
-- ✓ State-of-the-art results
-
-## 📈 Evaluation Metrics
-
-### 1. BLEU Score
-- Measures n-gram overlap with reference
-- Industry standard for code generation
-- Range: 0-100 (higher is better)
-
-### 2. Token-Level Accuracy
-- Percentage of correctly predicted tokens
-- Position-aware matching
-- Penalizes length mismatches
-
-### 3. Exact Match Accuracy
-- Percentage of perfectly generated functions
-- Strict metric
-- Important for short snippets
-
-### 4. Error Analysis
-- **Syntax errors**: Missing keywords, colons, etc.
-- **Length mismatches**: Too short/long generations
-- **Semantic errors**: Wrong logic but valid syntax
-
-## 🎓 Learning Objectives
-
-### What You'll Learn:
-
-1. **Vanilla RNN Limitations**
-   - Vanishing gradients in practice
-   - Why long sequences are problematic
-   - Baseline performance
-
-2. **LSTM Improvements**
-   - How gates help gradient flow
-   - Long-term dependency modeling
-   - Quantitative improvements
-
-3. **Attention Mechanisms**
-   - Breaking the fixed-context bottleneck
-   - Alignment learning
-   - Interpretability via visualizations
-
-4. **Practical ML Skills**
-   - Dataset preprocessing
-   - Training loop implementation
-   - Evaluation metrics
-   - Checkpoint management
-   - Visualization techniques
-
-## 📝 Example Usage
-
-### Interactive Testing
+### Training Configuration (in train.py)
 
 ```python
-from data_preprocessing import load_vocab, sentence_to_indices
-from models.lstm_attention import create_lstm_attention_model
-import torch
-
-# Load model and vocab
-device = torch.device('cpu')
-docstring_vocab = load_vocab('checkpoints/docstring_vocab.pkl')
-code_vocab = load_vocab('checkpoints/code_vocab.pkl')
-
-model = create_lstm_attention_model(
-    len(docstring_vocab), len(code_vocab), 256, 256, 1, device
-)
-checkpoint = torch.load('checkpoints/lstm_attention_best.pt', map_location=device)
-model.load_state_dict(checkpoint['model_state_dict'])
-
-# Test input
-docstring = "returns the maximum value in a list"
-indices = sentence_to_indices(docstring, docstring_vocab, 50)
-src = torch.LongTensor([indices]).to(device)
-
-# Generate
-generated, attentions = model.generate(src, 82, 
-                                      code_vocab.word2idx['<SOS>'],
-                                      code_vocab.word2idx['<EOS>'])
-
-# Decode
-output = ' '.join([code_vocab.idx2word[idx.item()] 
-                   for idx in generated[0] 
-                   if idx.item() != 0 and idx.item() != code_vocab.word2idx['<EOS>']])
-
-print(f"Generated code: {output}")
+config = {
+    "num_train": 10000,           # Training samples
+    "num_val": 1500,              # Validation samples
+    "num_test": 1500,             # Test samples
+    "max_docstring_len": 100,     # Max docstring length
+    "max_code_len": 150,          # Max code length
+    "embedding_dim": 256,         # Embedding dimension
+    "hidden_dim": 256,            # Hidden dimension
+    "batch_size": 64,             # Batch size
+    "num_epochs": 15,             # Training epochs
+    "learning_rate": 0.001,       # Learning rate
+    "num_layers": 2,              # LSTM layers
+    "dropout": 0.5,               # Dropout rate
+    "teacher_forcing_ratio": 0.5, # Teacher forcing
+    "weight_decay": 0.0001        # L2 regularization
+}
 ```
 
-## 🔍 Attention Analysis
+### Evaluation Configuration (in evaluate.py)
 
-The attention visualizations show:
+```python
+config = {
+    "num_test": 1500,             # Test samples
+    "max_docstring_len": 100,     # Max docstring length
+    "max_code_len": 150,          # Max generation length
+    "batch_size": 32,             # Batch size
+}
+```
 
-1. **Alignment Quality**
-   - Does "maximum" attend to `max()`?
-   - Does "list" attend to array operations?
+## 📊 Evaluation Metrics
 
-2. **Sequential vs Semantic**
-   - Diagonal patterns = sequential copying
-   - Scattered patterns = semantic understanding
+### 1. Token-level Accuracy
+Percentage of correctly predicted tokens (excluding padding).
 
-3. **Common Patterns**
-   - Keywords → operators
-   - Data types → variable declarations
-   - Actions → function calls
+### 2. BLEU Score
+N-gram overlap between generated and reference code (using sacrebleu).
 
-## 📊 Expected Results
+### 3. Exact Match Accuracy
+Percentage of completely correct outputs.
 
-Based on similar implementations:
+### 4. Syntax Validation
+Percentage of syntactically valid Python code (using AST parser).
 
-| Model | BLEU Score | Token Accuracy | Exact Match |
-|-------|-----------|----------------|-------------|
-| Vanilla RNN | 15-25 | 40-50% | 5-10% |
-| LSTM | 30-40 | 55-65% | 15-20% |
-| LSTM + Attention | 45-60 | 70-80% | 25-35% |
+### 5. Performance vs Docstring Length
+BLEU score analysis across different docstring length buckets.
 
-*Note: Results vary based on dataset size and hyperparameters*
+## � Experimental Results
+
+(Results on 1,500 test samples)
+
+| Model | Token Accuracy (%) | BLEU Score | Syntax Valid (%) |
+| :--- | :---: | :---: | :---: |
+| **LSTM + Attention** | **12.60%** | **11.98** | 5.0% |
+| **LSTM (Seq2Seq)** | 11.31% | 11.07 | 5.0% |
+| **Vanilla RNN** | 10.05% | 8.98 | 0.0% |
+| **Transformer** | 0.51% | 3.12 | 83.0%* |
+
+\* *Note: Transformer's high syntax validity is due to generating very short, trivial sequences.*
+
+### Key Observations
+- **LSTM + Attention** achieved the best performance (highest BLEU & Token Accuracy).
+- **Attention** helps align keywords (e.g., "sum" → "+") for better translation.
+- **Transformer** struggled with the small dataset (10k samples) due to lack of inductive bias.
+- **Vanilla RNN** failed to capture long-range dependencies effectively.
+
+For a detailed analysis, see the generated report: `1331.pdf`.
+
+## 🎨 Attention Visualization
+
+The attention visualization script generates heatmaps showing:
+- Which docstring words the model attends to when generating each code token
+- Alignment patterns between natural language and code
+- Semantic relationships (e.g., "maximum" → "max()")
+
+**Example Analysis:**
+```
+'max' attends to:
+  1. 'maximum' (weight: 0.872)
+  2. 'value' (weight: 0.091)
+  3. 'returns' (weight: 0.024)
+```
 
 ## 🐛 Troubleshooting
 
-### Common Issues:
+### CUDA Out of Memory
+```bash
+# Reduce batch size in config
+config["batch_size"] = 32  # or 16
+```
 
-1. **Out of Memory**
-   ```bash
-   # Reduce batch size in train.py
-   'batch_size': 16  # instead of 32
-   ```
+### Dataset Download Issues
+```bash
+# Manually download dataset
+from datasets import load_dataset
+dataset = load_dataset("Nan-Do/code-search-net-python")
+```
 
-2. **Dataset Download Fails**
-   ```bash
-   # Clear cache and retry
-   rm -rf ~/.cache/huggingface/datasets
-   python train.py
-   ```
+### Import Errors
+```bash
+# Reinstall dependencies
+pip install --upgrade -r requirements.txt
+```
 
-3. **CUDA Out of Memory**
-   ```bash
-   # Use CPU
-   # Models will automatically fall back to CPU if CUDA unavailable
-   ```
+## 🔬 Reproducibility
 
-4. **Import Errors**
-   ```bash
-   # Reinstall dependencies
-   pip install -r requirements.txt --force-reinstall
-   ```
+This project ensures reproducibility through:
+- ✅ Fixed random seeds (Python, NumPy, PyTorch)
+- ✅ Deterministic CUDA operations
+- ✅ Seed saved in checkpoints
+- ✅ num_workers=0 in DataLoaders
+- ✅ Environment variables set (PYTHONHASHSEED, CUDA_LAUNCH_BLOCKING)
+
+To reproduce results:
+```bash
+python train.py 42  # Use same seed
+```
+
 
 ## 📚 References
 
-- **Attention Mechanism**: [Bahdanau et al., 2015](https://arxiv.org/abs/1409.0473)
-- **Seq2Seq**: [Sutskever et al., 2014](https://arxiv.org/abs/1409.3215)
-- **CodeSearchNet**: [Husain et al., 2019](https://arxiv.org/abs/1909.09436)
+1. Sutskever et al. (2014) - "Sequence to Sequence Learning with Neural Networks"
+2. Bahdanau et al. (2014) - "Neural Machine Translation by Jointly Learning to Align and Translate"
+3. Vaswani et al. (2017) - "Attention Is All You Need"
+4. Husain et al. (2019) - "CodeSearchNet Challenge: Evaluating the State of Semantic Code Search"
 
-## 🎯 Assignment Deliverables Checklist
 
-- [x] Vanilla RNN implementation
-- [x] LSTM implementation  
-- [x] LSTM + Attention implementation
-- [x] Training script with loss curves
-- [x] Evaluation with BLEU score
-- [x] Attention visualization (3+ examples)
-- [x] Error analysis
-- [x] README with instructions
-- [x] Reproducible code
+## 📄 License
 
-## 🚀 Extensions (Bonus)
-
-1. **Syntax Validation**
-   ```python
-   import ast
-   try:
-       ast.parse(generated_code)
-       print("Valid Python syntax!")
-   except SyntaxError:
-       print("Syntax error detected")
-   ```
-
-2. **Longer Sequences**
-   - Increase `max_docstring_len` and `max_code_len`
-   - May need more training data
-
-3. **Transformer Comparison**
-   - Implement basic Transformer encoder-decoder
-   - Compare with attention-based LSTM
-
-## 📧 Support
-
-For questions or issues:
-1. Check this README
-2. Review error messages carefully
-3. Ensure all dependencies are installed
-4. Verify file paths are correct
-
-## 📜 License
-
-This is an educational project for assignment purposes.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ---
 
-**Happy Coding! 🎉**
-
-Built with PyTorch, Hugging Face Datasets
+**Note:** This is an educational project for understanding sequence-to-sequence models. For production code generation, consider using state-of-the-art models like CodeT5, CodeGen, or GitHub Copilot.
