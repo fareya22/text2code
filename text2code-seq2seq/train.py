@@ -171,7 +171,7 @@ def main(seed=42):
     set_seed(seed)
     print(f"Using seed: {seed}")
     
-    SAVE_DIR = "/content/drive/MyDrive/text2code-seq2seq/checkpoints"
+    SAVE_DIR = "checkpoints"
     os.makedirs(SAVE_DIR, exist_ok=True)
 
     config = {

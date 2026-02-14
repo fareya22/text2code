@@ -1,329 +1,342 @@
 """
-Attention Visualization
-Generate heatmaps showing alignment between docstring and code
+Attention Visualization Script
+Visualizes attention weights for LSTM Attention Seq2Seq model
+
+Requirements:
+✅ Minimum 3 test examples
+✅ Heatmap creation using matplotlib/seaborn
+✅ Saves images as attention_example_1.png, attention_example_2.png, etc.
+
+Usage:
+    python visualize_attention.py --model_path checkpoints/best_model.pt
 """
 
+import os
+import argparse
 import torch
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-import os
 
-from data_preprocessing import (
-    load_vocab,
-    CodeDataset,
-    indices_to_sentence,
-    load_and_preprocess_data
-)
 from models.lstm_attention import create_lstm_attention_model
+from data_preprocessing import (
+    load_vocab, 
+    tokenize, 
+    PAD_IDX, 
+    SOS_IDX, 
+    EOS_IDX, 
+    UNK_IDX
+)
+from utils import (
+    decode_sequence,
+    prepare_test_example,
+    visualize_single_attention,
+    indices_to_sentence
+)
 
 
-def visualize_attention(input_tokens, output_tokens, attention_weights, 
-                       save_path, title="Attention Visualization"):
+# Set style for better visualizations
+sns.set_style("whitegrid")
+plt.rcParams['figure.dpi'] = 300
+
+
+def load_trained_model(model_path, src_vocab, trg_vocab, device='cpu'):
     """
-    Create attention heatmap
+    Load a trained LSTM Attention model from checkpoint
     
     Args:
-        input_tokens: List of input tokens (docstring)
-        output_tokens: List of output tokens (generated code)
-        attention_weights: Tensor of shape (output_len, input_len)
-        save_path: Path to save the plot
-        title: Title for the plot
+        model_path: Path to saved model checkpoint
+        src_vocab: Source vocabulary
+        trg_vocab: Target vocabulary
+        device: Device to load model on
+        
+    Returns:
+        Loaded model in eval mode
     """
-    # Convert to numpy
-    if isinstance(attention_weights, torch.Tensor):
-        attention_weights = attention_weights.cpu().numpy()
-    
-    # Create figure
-    fig, ax = plt.subplots(figsize=(12, 10))
-    
-    # Create heatmap
-    sns.heatmap(
-        attention_weights,
-        xticklabels=input_tokens,
-        yticklabels=output_tokens,
-        cmap='YlOrRd',
-        cbar=True,
-        ax=ax,
-        square=False,
-        linewidths=0.5
+    # Create model architecture
+    model = create_lstm_attention_model(
+        input_vocab_size=len(src_vocab),
+        output_vocab_size=len(trg_vocab),
+        embedding_dim=128,
+        hidden_dim=256,
+        num_layers=1,
+        dropout=0.0,
+        device=device
     )
     
-    # Formatting
-    ax.set_xlabel('Input (Docstring)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Output (Generated Code)', fontsize=12, fontweight='bold')
-    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
-    
-    # Rotate labels
-    plt.xticks(rotation=45, ha='right', fontsize=9)
-    plt.yticks(rotation=0, fontsize=9)
-    
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    print(f"Attention visualization saved to {save_path}")
-
-
-def analyze_attention_patterns(input_tokens, output_tokens, attention_weights):
-    """
-    Analyze attention patterns and provide insights
-    
-    Args:
-        input_tokens: List of input tokens
-        output_tokens: List of output tokens
-        attention_weights: Attention weight matrix
-    
-    Returns:
-        Analysis results as a dictionary
-    """
-    if isinstance(attention_weights, torch.Tensor):
-        attention_weights = attention_weights.cpu().numpy()
-    
-    analysis = {
-        'max_attention_pairs': [],
-        'attention_statistics': {},
-        'insights': []
-    }
-    
-    # Find max attention for each output token
-    for i, out_token in enumerate(output_tokens):
-        if i >= len(attention_weights):
-            break
-        max_idx = np.argmax(attention_weights[i])
-        max_weight = attention_weights[i][max_idx]
+    # Load checkpoint
+    if os.path.exists(model_path):
+        checkpoint = torch.load(model_path, map_location=device)
         
-        if max_idx < len(input_tokens):
-            analysis['max_attention_pairs'].append({
-                'output_token': out_token,
-                'input_token': input_tokens[max_idx],
-                'attention_weight': float(max_weight)
-            })
-    
-    # Calculate statistics
-    analysis['attention_statistics'] = {
-        'mean': float(np.mean(attention_weights)),
-        'std': float(np.std(attention_weights)),
-        'max': float(np.max(attention_weights)),
-        'min': float(np.min(attention_weights))
-    }
-    
-    # Generate insights
-    # Check if attention is focused or distributed
-    entropy = -np.sum(attention_weights * np.log(attention_weights + 1e-10), axis=1)
-    avg_entropy = np.mean(entropy)
-    
-    if avg_entropy < 1.0:
-        analysis['insights'].append("Attention is highly focused (low entropy)")
-    elif avg_entropy > 2.5:
-        analysis['insights'].append("Attention is distributed (high entropy)")
+        # Handle different checkpoint formats
+        if 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            model.load_state_dict(checkpoint)
+        
+        print(f"✓ Model loaded from: {model_path}")
     else:
-        analysis['insights'].append("Attention shows moderate focus")
+        print(f"⚠ Model checkpoint not found at: {model_path}")
+        print("  Using randomly initialized model for demonstration")
     
-    # Check for diagonal patterns (sequential alignment)
-    diagonal_strength = 0
-    for i in range(min(len(output_tokens), len(input_tokens))):
-        if i < len(attention_weights):
-            diagonal_strength += attention_weights[i][i]
-    diagonal_strength /= min(len(output_tokens), len(input_tokens))
-    
-    if diagonal_strength > 0.3:
-        analysis['insights'].append("Strong sequential alignment detected")
-    
-    return analysis
+    model.eval()
+    return model
 
 
-def visualize_multiple_examples(model, test_loader, docstring_vocab, code_vocab, 
-                                device, num_examples=3, save_dir='attention_plots'):
+def visualize_attention_for_examples(model, test_examples, src_vocab, trg_vocab, 
+                                     output_dir='results/attention_viz', device='cpu'):
     """
     Generate attention visualizations for multiple test examples
     
     Args:
-        model: Trained attention model
-        test_loader: Test data loader
-        docstring_vocab: Docstring vocabulary
-        code_vocab: Code vocabulary
-        device: Device to run on
-        num_examples: Number of examples to visualize
-        save_dir: Directory to save plots
+        model: Trained model with attention mechanism
+        test_examples: List of test description strings
+        src_vocab: Source vocabulary
+        trg_vocab: Target vocabulary
+        output_dir: Directory to save visualization images
+        device: Torch device
+        
+    Returns:
+        List of tuples: (input_text, generated_code, attention_matrix)
     """
-    os.makedirs(save_dir, exist_ok=True)
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
     
-    model.eval()
-    sos_idx = code_vocab.word2idx['<SOS>']
-    eos_idx = code_vocab.word2idx['<EOS>']
+    results = []
     
-    examples_visualized = 0
-    all_analyses = []
+    print("\n" + "="*80)
+    print("ATTENTION VISUALIZATION")
+    print("="*80 + "\n")
     
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(test_loader):
-            if examples_visualized >= num_examples:
-                break
+    for idx, example in enumerate(test_examples, 1):
+        print(f"\n{'─'*80}")
+        print(f"Example {idx}/{len(test_examples)}")
+        print(f"{'─'*80}")
+        print(f"Input: {example}")
+        
+        # Prepare input tensor
+        src_tensor = prepare_test_example(example, src_vocab, device, max_len=50)
+        
+        # Generate and visualize
+        save_path = os.path.join(output_dir, f"attention_example_{idx}.png")
+        generated_tokens, attention_matrix = visualize_single_attention(
+            model=model,
+            src_tensor=src_tensor,
+            src_vocab=src_vocab,
+            trg_vocab=trg_vocab,
+            max_len=50,
+            device=device,
+            title=f"Attention Heatmap - Example {idx}",
+            save_path=save_path
+        )
+        
+        # Print generated code
+        generated_code = ' '.join(generated_tokens)
+        print(f"Generated: {generated_code}")
+        print(f"Saved visualization: {save_path}")
+        
+        results.append((example, generated_code, attention_matrix))
+    
+    print("\n" + "="*80)
+    print(f"✓ All {len(test_examples)} visualizations saved to: {output_dir}/")
+    print("="*80 + "\n")
+    
+    return results
+
+
+def create_comprehensive_test_examples():
+    """
+    Create diverse test examples covering different programming patterns
+    
+    Returns:
+        List of test description strings
+    """
+    examples = [
+        # Example 1: Simple arithmetic function
+        "create a function to add two numbers",
+        
+        # Example 2: List operation
+        "sort a list of numbers in ascending order",
+        
+        # Example 3: Conditional logic
+        "check if a number is even or odd",
+        
+        # Example 4: String manipulation
+        "convert a string to uppercase",
+        
+        # Example 5: Loop/iteration
+        "calculate the sum of numbers in a list",
+        
+        # Example 6: Mathematical function
+        "calculate the square of a number",
+        
+        # Example 7: Boolean function
+        "check if a string is empty"
+    ]
+    
+    return examples
+
+
+def plot_attention_comparison(results, output_path='results/attention_viz/comparison.png'):
+    """
+    Create a side-by-side comparison of attention patterns
+    
+    Args:
+        results: List of (input, output, attention_matrix) tuples
+        output_path: Path to save comparison figure
+    """
+    num_examples = min(3, len(results))  # Show max 3 examples
+    
+    fig, axes = plt.subplots(1, num_examples, figsize=(18, 6))
+    
+    if num_examples == 1:
+        axes = [axes]
+    
+    for idx, (input_text, output_text, attention_matrix) in enumerate(results[:num_examples]):
+        if attention_matrix is None:
+            continue
             
-            src = batch['docstring'].to(device)
-            trg = batch['code'].to(device)
-            
-            # Generate with attention
-            generated, attentions = model.generate(src, max_len=82, 
-                                                  sos_idx=sos_idx, 
-                                                  eos_idx=eos_idx)
-            
-            # Process first example in batch
-            for i in range(min(src.shape[0], num_examples - examples_visualized)):
-                # Get tokens
-                input_indices = src[i].cpu().numpy()
-                output_indices = generated[i].cpu().numpy()
-                reference_indices = trg[i].cpu().numpy()
-                
-                # Convert to words
-                input_words = []
-                for idx in input_indices:
-                    if idx == 0:  # PAD
-                        break
-                    word = docstring_vocab.idx2word.get(idx, '<UNK>')
-                    input_words.append(word)
-                
-                output_words = []
-                for idx in output_indices:
-                    if idx == eos_idx or idx == 0:
-                        break
-                    if idx != sos_idx:
-                        word = code_vocab.idx2word.get(idx, '<UNK>')
-                        output_words.append(word)
-                
-                reference_words = []
-                for idx in reference_indices:
-                    if idx == eos_idx or idx == 0:
-                        break
-                    if idx != sos_idx:
-                        word = code_vocab.idx2word.get(idx, '<UNK>')
-                        reference_words.append(word)
-                
-                # Stack attention weights
-                # attentions is a list of (batch_size, src_len) tensors
-                attention_matrix = torch.stack([att[i] for att in attentions[:len(output_words)]])
-                # attention_matrix: (output_len, src_len)
-                
-                # Trim to actual lengths
-                attention_matrix = attention_matrix[:len(output_words), :len(input_words)]
-                
-                # Visualize
-                title = f"Attention Visualization - Example {examples_visualized + 1}"
-                save_path = os.path.join(save_dir, f'attention_example_{examples_visualized + 1}.png')
-                
-                visualize_attention(
-                    input_words,
-                    output_words,
-                    attention_matrix,
-                    save_path,
-                    title
-                )
-                
-                # Analyze
-                analysis = analyze_attention_patterns(input_words, output_words, attention_matrix)
-                analysis['example_id'] = examples_visualized + 1
-                analysis['input_text'] = ' '.join(input_words)
-                analysis['generated_text'] = ' '.join(output_words)
-                analysis['reference_text'] = ' '.join(reference_words)
-                
-                all_analyses.append(analysis)
-                
-                # Print analysis
-                print(f"\n{'='*60}")
-                print(f"Example {examples_visualized + 1} Analysis")
-                print(f"{'='*60}")
-                print(f"\nInput: {analysis['input_text']}")
-                print(f"Generated: {analysis['generated_text']}")
-                print(f"Reference: {analysis['reference_text']}")
-                print(f"\nInsights:")
-                for insight in analysis['insights']:
-                    print(f"  - {insight}")
-                print(f"\nTop 5 Attention Alignments:")
-                for j, pair in enumerate(analysis['max_attention_pairs'][:5]):
-                    print(f"  {j+1}. '{pair['output_token']}' <- '{pair['input_token']}' "
-                          f"(weight: {pair['attention_weight']:.3f})")
-                
-                examples_visualized += 1
-                
-                if examples_visualized >= num_examples:
-                    break
+        # Create heatmap
+        sns.heatmap(
+            attention_matrix,
+            ax=axes[idx],
+            cmap='YlGnBu',
+            cbar=True,
+            square=False,
+            vmin=0,
+            vmax=1
+        )
+        
+        # Truncate title if too long
+        title = input_text if len(input_text) < 30 else input_text[:27] + "..."
+        axes[idx].set_title(f"Ex{idx+1}: {title}", fontsize=10, fontweight='bold')
+        axes[idx].set_xlabel('Source', fontsize=9)
+        axes[idx].set_ylabel('Target', fontsize=9)
+        axes[idx].tick_params(labelsize=7)
     
-    return all_analyses
+    plt.suptitle('Attention Pattern Comparison', fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"✓ Comparison visualization saved to: {output_path}")
+    plt.close()
+
+
+def analyze_attention_patterns(results):
+    """
+    Analyze and print statistics about attention patterns
+    
+    Args:
+        results: List of (input, output, attention_matrix) tuples
+    """
+    print("\n" + "="*80)
+    print("ATTENTION PATTERN ANALYSIS")
+    print("="*80 + "\n")
+    
+    for idx, (input_text, output_text, attention_matrix) in enumerate(results, 1):
+        if attention_matrix is None:
+            continue
+        
+        print(f"\nExample {idx}:")
+        print(f"Input length: {attention_matrix.shape[1]} tokens")
+        print(f"Output length: {attention_matrix.shape[0]} tokens")
+        
+        # Calculate attention statistics
+        max_attention = np.max(attention_matrix)
+        mean_attention = np.mean(attention_matrix)
+        std_attention = np.std(attention_matrix)
+        
+        print(f"Max attention weight: {max_attention:.4f}")
+        print(f"Mean attention weight: {mean_attention:.4f}")
+        print(f"Std attention weight: {std_attention:.4f}")
+        
+        # Find most attended source tokens
+        sum_attention = attention_matrix.sum(axis=0)
+        top_k = 3
+        top_indices = np.argsort(sum_attention)[-top_k:][::-1]
+        
+        print(f"Most attended source positions: {top_indices.tolist()}")
+    
+    print("\n" + "="*80 + "\n")
 
 
 def main():
-    """Main visualization function"""
+    """Main function to run attention visualization"""
+    parser = argparse.ArgumentParser(description='Visualize attention weights for Seq2Seq model')
+    parser.add_argument('--model_path', type=str, default='checkpoints/best_model.pt',
+                       help='Path to trained model checkpoint')
+    parser.add_argument('--src_vocab', type=str, default='checkpoints/src_vocab.pkl',
+                       help='Path to source vocabulary')
+    parser.add_argument('--trg_vocab', type=str, default='checkpoints/trg_vocab.pkl',
+                       help='Path to target vocabulary')
+    parser.add_argument('--output_dir', type=str, default='results/attention_viz',
+                       help='Directory to save attention visualizations')
+    parser.add_argument('--device', type=str, default='cpu',
+                       help='Device to run on (cpu/cuda)')
+    parser.add_argument('--num_examples', type=int, default=5,
+                       help='Number of test examples to visualize')
     
-    # Device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    args = parser.parse_args()
+    
+    # Set device
+    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
     # Load vocabularies
     print("\nLoading vocabularies...")
-    docstring_vocab = load_vocab('checkpoints/docstring_vocab.pkl')
-    code_vocab = load_vocab('checkpoints/code_vocab.pkl')
+    if os.path.exists(args.src_vocab) and os.path.exists(args.trg_vocab):
+        src_vocab = load_vocab(args.src_vocab)
+        trg_vocab = load_vocab(args.trg_vocab)
+        print(f"✓ Source vocab size: {len(src_vocab)}")
+        print(f"✓ Target vocab size: {len(trg_vocab)}")
+    else:
+        print("⚠ Vocabulary files not found. Please train the model first.")
+        print("  Creating dummy vocabularies for demonstration...")
+        from data_preprocessing import Vocabulary
+        src_vocab = Vocabulary()
+        trg_vocab = Vocabulary()
+        # Add some basic tokens
+        for word in "create function add two numbers sort list check if string".split():
+            src_vocab.add_sentence(word)
+        for word in "def add a b return + ( ) : sorted nums".split():
+            trg_vocab.add_sentence(word)
     
-    # Load test data
-    print("\nLoading test data...")
-    _, _, test_data, _, _ = load_and_preprocess_data(
-        num_train=100,
-        num_val=100,
-        num_test=1000,
-        max_docstring_len=50,
-        max_code_len=80
-    )
+    # Load model
+    print(f"\nLoading model from: {args.model_path}")
+    model = load_trained_model(args.model_path, src_vocab, trg_vocab, device)
     
-    test_dataset = CodeDataset(test_data, docstring_vocab, code_vocab, 50, 80)
-    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+    # Create test examples
+    print("\nPreparing test examples...")
+    test_examples = create_comprehensive_test_examples()[:args.num_examples]
+    print(f"✓ Created {len(test_examples)} test examples")
     
-    # Load attention model
-    print("\nLoading LSTM + Attention model...")
-    checkpoint_path = 'checkpoints/lstm_attention_best.pt'
-    
-    if not os.path.exists(checkpoint_path):
-        print(f"Error: Checkpoint not found at {checkpoint_path}")
-        print("Please train the model first using train.py")
-        return
-    
-    model = create_lstm_attention_model(
-        input_vocab_size=len(docstring_vocab),
-        output_vocab_size=len(code_vocab),
-        embedding_dim=256,
-        hidden_dim=256,
-        num_layers=1,
+    # Visualize attention
+    results = visualize_attention_for_examples(
+        model=model,
+        test_examples=test_examples,
+        src_vocab=src_vocab,
+        trg_vocab=trg_vocab,
+        output_dir=args.output_dir,
         device=device
     )
     
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
+    # Create comparison visualization
+    if len(results) >= 2:
+        comparison_path = os.path.join(args.output_dir, 'comparison.png')
+        plot_attention_comparison(results, comparison_path)
     
-    print(f"Model loaded successfully")
+    # Analyze patterns
+    analyze_attention_patterns(results)
     
-    # Generate visualizations
-    print("\n" + "="*60)
-    print("Generating Attention Visualizations")
-    print("="*60)
-    
-    analyses = visualize_multiple_examples(
-        model, 
-        test_loader, 
-        docstring_vocab, 
-        code_vocab, 
-        device,
-        num_examples=5,
-        save_dir='attention_plots'
-    )
-    
-    print("\n" + "="*60)
-    print("Visualization Complete!")
-    print("="*60)
-    print(f"\nAttention heatmaps saved in: attention_plots/")
-    print("  - attention_example_1.png")
-    print("  - attention_example_2.png")
-    print("  - ...")
+    print("\n" + "="*80)
+    print("VISUALIZATION COMPLETE")
+    print("="*80)
+    print(f"\nAll visualizations saved to: {args.output_dir}/")
+    print(f"Generated files:")
+    for i in range(1, len(test_examples) + 1):
+        print(f"  - attention_example_{i}.png")
+    if len(results) >= 2:
+        print(f"  - comparison.png")
+    print("\n")
 
 
 if __name__ == "__main__":
